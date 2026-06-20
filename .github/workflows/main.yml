@@ -1,0 +1,16 @@
+name: SATS Screener
+on:
+  schedule:
+    - cron: '*/15 6-12 * * 0-4'
+  workflow_dispatch:
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - run: pip install requests
+      - run: python sats_screener.py
+        timeout-minutes: 10
