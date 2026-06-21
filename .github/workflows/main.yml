@@ -6,11 +6,10 @@ on:
 jobs:
   scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Python
-        run: sudo apt-get install -y python3 python3-pip
       - name: Install
-        run: pip3 install requests
+        run: pip install requests
       - name: Run
-        run: timeout 540 python3 sats_screener.py || true
+        run: python sats_screener.py
