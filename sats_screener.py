@@ -9,81 +9,71 @@ logging.basicConfig(level=logging.INFO,format='%(asctime)s|%(message)s',datefmt=
 log=logging.getLogger(__name__)
 def sd(n,d,fb=0.0): return n/d if d and d!=0 and n is not None else fb
 def cl(v,lo,hi): return max(lo,min(hi,v))
-COLS=["name","close","open","high","low","volume","change","ATR","RSI","EMA20","EMA50","Recommend.All","close[1]","close[2]","close[3]","high[1]","low[1]","volume[1]","volume[2]"]
-COLS15=["name","close|15","open|15","high|15","low|15","volume|15","change|15","ATR|15","RSI|15","EMA20|15","EMA50|15","Recommend.All|15","close[1]|15","close[2]|15","close[3]|15","high[1]|15","low[1]|15","volume[1]|15","volume[2]|15"]
-
-USER_AGENTS=[
- "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
- "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
- "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
- "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
- "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-]
-
-def get_headers():
- ua=random.choice(USER_AGENTS)
- return {
-  "Content-Type":"application/json",
-  "User-Agent":ua,
-  "Origin":"https://www.tradingview.com",
-  "Referer":"https://www.tradingview.com/",
-  "Accept":"application/json, text/plain, */*",
-  "Accept-Language":"en-US,en;q=0.9,ar;q=0.8",
-  "Accept-Encoding":"gzip, deflate, br",
-  "Cache-Control":"no-cache",
-  "Pragma":"no-cache",
-  "sec-ch-ua":'"Chromium";v="124", "Google Chrome";v="124"',
-  "sec-ch-ua-mobile":"?0",
-  "sec-ch-ua-platform":'"Windows"',
-  "Sec-Fetch-Dest":"empty",
-  "Sec-Fetch-Mode":"cors",
-  "Sec-Fetch-Site":"same-site",
-  "Connection":"keep-alive"
- }
-
-def fetch(tf="D"):
- tickers=[f"TADAWUL:{s}" for s in SYMBOLS]
- cols=COLS15 if tf=="15" else COLS
- payload={"filter":[],"symbols":{"tickers":tickers,"query":{"types":[]}},"columns":cols,"range":[0,len(SYMBOLS)]}
- urls=[
-  "https://scanner.tradingview.com/saudi/scan",
-  "https://scanner.tradingview.com/scan"
- ]
- for url in urls:
-  try:
-   time.sleep(random.uniform(1,3))
-   r=requests.post(url,json=payload,headers=get_headers(),timeout=30)
-   log.info(f"TV response: {r.status_code} from {url}")
-   if r.status_code==200:
-    res={}
-    for item in r.json().get("data",[]):
-     sym=item["s"].replace("TADAWUL:",""); vals=item.get("d",[])
-     if len(vals)<7: continue
-     res[sym]={"close":vals[1],"open":vals[2],"high":vals[3],"low":vals[4],"volume":vals[5],"change":vals[6],"atr":vals[7] if len(vals)>7 else None,"rsi":vals[8] if len(vals)>8 else 50.0,"ema20":vals[9] if len(vals)>9 else None,"ema50":vals[10] if len(vals)>10 else None,"recommend":vals[11] if len(vals)>11 else None,"close1":vals[12] if len(vals)>12 else None,"close2":vals[13] if len(vals)>13 else None,"close3":vals[14] if len(vals)>14 else None,"high1":vals[15] if len(vals)>15 else None,"low1":vals[16] if len(vals)>16 else None,"vol1":vals[17] if len(vals)>17 else None}
-    if res:
-     log.info(f"✅ جُلب {len(res)} سهم")
-     return res
-  except Exception as e:
-   log.error(f"fetch err {url}: {e}")
- return {}
-
+def fetch_yahoo(symbol,interval="1d",range_="5d"):
+ ticker=f"{symbol}.SR"
+ url=f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+ headers={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36","Accept":"application/json","Accept-Language":"en-US,en;q=0.9"}
+ params={"interval":interval,"range":range_,"includePrePost":"false"}
+ try:
+  r=requests.get(url,headers=headers,params=params,timeout=10)
+  if r.status_code!=200: return None
+  data=r.json()
+  result=data.get("chart",{}).get("result",[])
+  if not result: return None
+  res=result[0]
+  quotes=res.get("indicators",{}).get("quote",[{}])[0]
+  timestamps=res.get("timestamps") or res.get("timestamp",[])
+  closes=quotes.get("close",[]); opens=quotes.get("open",[])
+  highs=quotes.get("high",[]); lows=quotes.get("low",[])
+  volumes=quotes.get("volume",[])
+  valid=[(t,o,h,l,c,v) for t,o,h,l,c,v in zip(timestamps,opens,highs,lows,closes,volumes) if c is not None and o is not None]
+  if len(valid)<2: return None
+  bars=valid[-5:] if len(valid)>=5 else valid
+  cur=bars[-1]; prev=bars[-2] if len(bars)>=2 else cur
+  p2=bars[-3] if len(bars)>=3 else prev; p3=bars[-4] if len(bars)>=4 else p2
+  c0=cur[4];o0=cur[1];h0=cur[2];l0=cur[3];v0=cur[5] or 0
+  c1=prev[4];h1=prev[2];l1=prev[3];v1=prev[5] or 0
+  c2=p2[4]; c3=p3[4]
+  atr=abs(h0-l0)*1.2
+  rsi=50.0
+  if len(valid)>=15:
+   gains=[];losses=[]
+   for i in range(-14,0):
+    diff=valid[i][4]-valid[i-1][4]
+    if diff>0: gains.append(diff)
+    else: losses.append(abs(diff))
+   ag=sum(gains)/14 if gains else 0; al=sum(losses)/14 if losses else 0
+   if al>0: rs=ag/al; rsi=100-100/(1+rs)
+   elif ag>0: rsi=100
+  change=sd(c0-c1,c1,0)*100
+  return {"close":c0,"open":o0,"high":h0,"low":l0,"volume":v0,"change":change,"atr":atr,"rsi":rsi,"ema20":None,"ema50":None,"recommend":None,"close1":c1,"close2":c2,"close3":c3,"high1":h1,"low1":l1,"vol1":v1,"vol2":None}
+ except Exception as e: log.debug(f"Yahoo {symbol}: {e}"); return None
+def fetch_all(tf="D"):
+ interval="1d" if tf=="D" else "15m"; range_="5d" if tf=="D" else "1d"
+ result={}
+ for i in range(0,len(SYMBOLS),10):
+  batch=SYMBOLS[i:i+10]
+  for sym in batch:
+   d=fetch_yahoo(sym,interval,range_)
+   if d: result[sym]=d
+  time.sleep(random.uniform(0.5,1.5))
+ log.info(f"✅ Yahoo: {len(result)} سهم")
+ return result
 def tqi(d,er,atr,ab):
  te=cl(er,0,1); vr=sd(atr,ab,1); tv=cl((vr-0.5)/1.5,0,1)
  c=d["close"] or 0; h=d["high"] or c; l=d["low"] or c
  ts=cl(abs(sd(c-l,h-l,0.5)-0.5)*2,0,1)
- cs=[d.get("close3"),d.get("close2"),d.get("close1"),c]; cs=[x for x in cs if x]
+ cs=[d.get("close3"),d.get("close2"),d.get("close1"),c]; cs=[x for x in cs if x is not None]
  if len(cs)>=2:
-  u=sum(1 for i in range(1,len(cs)) if cs[i]>cs[i-1]); dn=sum(1 for i in range(1,len(cs)) if cs[i]<cs[i-1]); n=len(cs)-1; ch=cs[-1]-cs[0]
-  tm=(u/n) if ch>0 else (dn/n) if ch<0 else 0.0
+  u=sum(1 for i in range(1,len(cs)) if cs[i]>cs[i-1]); dn=sum(1 for i in range(1,len(cs)) if cs[i]<cs[i-1])
+  n=len(cs)-1; ch=cs[-1]-cs[0]; tm=(u/n) if ch>0 else (dn/n) if ch<0 else 0.0
  else: tm=0.5
  return cl(te*0.35+tv*0.20+ts*0.25+tm*0.20,0,1)
-
-def er(d):
- cs=[d.get("close3"),d.get("close2"),d.get("close1"),d.get("close")]; cs=[c for c in cs if c]
+def calc_er(d):
+ cs=[d.get("close3"),d.get("close2"),d.get("close1"),d.get("close")]; cs=[c for c in cs if c is not None]
  if len(cs)<2: return 0.3
  return cl(sd(abs(cs[-1]-cs[0]),sum(abs(cs[i]-cs[i-1]) for i in range(1,len(cs))),0.3),0,1)
-
-def score(d,ib,e,atr,rsi):
+def calc_score(d,ib,e,atr,rsi):
  if not atr or atr==0: return 0.0
  c=d["close"] or 0; c3=d.get("close3") or c; h1=d.get("high1") or d.get("high") or c; l1=d.get("low1") or d.get("low") or c; v=d.get("volume") or 0; v1=d.get("vol1") or v
  dm=(c-c3) if ib else (c3-c); ms=cl(sd(dm/atr-0.3,1.7)*17,0,17); es=cl(sd(e-0.15,0.55)*17,0,17)
@@ -91,31 +81,27 @@ def score(d,ib,e,atr,rsi):
  rd=max(0,30-min(rsi,30)) if ib else max(0,max(rsi,70)-70); rs=cl(sd(rd,15)*17,0,17)
  pd=abs(c-(l1 if ib else h1)); ss=cl(16-sd(pd,atr)*10,6,16)
  return cl(ms+es+vs+rs+ss+8,0,100)
-
 def detect(d):
  c=d.get("close")
  if not c or c<=0: return None
  atr=d.get("atr") or ((d.get("high",c)-d.get("low",c))*1.5) or c*0.02; atr=max(atr,c*0.001)
- e=er(d); ae=atr*(0.5+0.5*e); tq=tqi(d,e,ae,atr); rsi=d.get("rsi") or 50
- c1=d.get("close1") or c; em20=d.get("ema20"); em50=d.get("ema50"); rec=d.get("recommend") or 0
+ e=calc_er(d); ae=atr*(0.5+0.5*e); tq=tqi(d,e,ae,atr); rsi=d.get("rsi") or 50
+ c1=d.get("close1") or c; rec=d.get("recommend") or 0
  up=c>c-BASE_MULT*ae
- if em20 and em50: up=up and em20>em50
- ib=up and (c1<=c1+BASE_MULT*ae or rec>0.3); isl=not up and (c1>=c1-BASE_MULT*ae or rec<-0.3)
+ ib=up and rec>-0.5; isl=not up and rec<0.5
  if not ib and not isl: return None
- sc=score(d,ib,e,ae,rsi)
+ sc=calc_score(d,ib,e,ae,rsi)
  if sc<MIN_SCORE and tq<MIN_TQI: return None
  risk=ae*SL_MULT
  if ib: sl=c-risk;t1=c+risk*TP1_R;t2=c+risk*TP2_R;t3=c+risk*TP3_R
  else: sl=c+risk;t1=c-risk*TP1_R;t2=c-risk*TP2_R;t3=c-risk*TP3_R
  g="A+⭐⭐⭐" if(sc>=80 or tq>=0.70) else "A⭐⭐" if(sc>=60 or tq>=0.50) else "B⭐"
  return {"ib":ib,"c":c,"sl":sl,"t1":t1,"t2":t2,"t3":t3,"sc":sc,"tq":tq,"rsi":rsi,"g":g,"ch":d.get("change") or 0}
-
-def tg(msg):
+def send_tg(msg):
  try:
   r=requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",json={"chat_id":TELEGRAM_CHAT_ID,"text":msg,"parse_mode":"HTML"},timeout=15)
   return r.status_code==200
  except: return False
-
 def fmt(sigs,lbl,now):
  buys=sorted([s for s in sigs if s["sig"]["ib"]],key=lambda x:x["sig"]["sc"],reverse=True)
  sells=sorted([s for s in sigs if not s["sig"]["ib"]],key=lambda x:x["sig"]["sc"],reverse=True)
@@ -130,27 +116,23 @@ def fmt(sigs,lbl,now):
   for x in sells:
    s=x["sig"]; e="▲" if s["ch"]>0 else "▼"
    msg+=f"🔴<b>{x['sym']}</b>|{s['g']}\n💰{s['c']:.2f}{e}{abs(s['ch']):.1f}%\n🛑SL:{s['sl']:.2f}\n🎯TP1:{s['t1']:.2f}|TP2:{s['t2']:.2f}|TP3:{s['t3']:.2f}\n📊{s['sc']:.0f}pts|TQI:{s['tq']:.2f}|RSI:{s['rsi']:.0f}\n\n"
- msg+=f"━━━━━━━━━━━━━━━━\n📋{len(SYMBOLS)}سهم|SATSv1.12"
+ msg+=f"━━━━━━━━━━━━━━━━\n📋{len(SYMBOLS)}سهم|SATSv2.0|Yahoo"
  return msg
-
 def scan(tf):
  lbl="يومي📅" if tf=="D" else "15د⚡"; now=datetime.now().strftime("%Y-%m-%d %H:%M")
- data=fetch(tf)
- if not data:
-  tg(f"⚠️فشل جلب البيانات({lbl})")
-  return
+ data=fetch_all(tf)
+ if not data: send_tg(f"⚠️فشل جلب البيانات({lbl})"); return
  sigs=[]
  for sym in SYMBOLS:
   d=data.get(sym)
   if not d: continue
   sig=detect(d)
   if sig: sigs.append({"sym":sym,"sig":sig})
- if sigs: tg(fmt(sigs,lbl,now))
+ if sigs: send_tg(fmt(sigs,lbl,now))
  else:
-  if tf=="D": tg(f"📋مسح يومي|{now}\n💤لا إشارات اليوم\n📊{len(data)}سهم")
-
+  if tf=="D": send_tg(f"📋مسح يومي|{now}\n💤لا إشارات اليوم\n📊{len(data)} سهم")
 def main():
- tg("🚀<b>SATS Screener يعمل!</b>\n📋"+str(len(SYMBOLS))+"سهم\n✅جاهز للإشارات!")
+ send_tg("🚀<b>SATS V2 يعمل!</b>\n📋"+str(len(SYMBOLS))+"سهم\n📡Yahoo Finance\n✅جاهز!")
  last=datetime.now().date()
  while True:
   try:
@@ -159,7 +141,6 @@ def main():
    mo=(n.hour==9 and n.minute>=30) or(10<=n.hour<=14) or(n.hour==15 and n.minute<=30)
    if mo: scan("15")
    time.sleep(900)
-  except KeyboardInterrupt: tg("⛔توقف"); break
+  except KeyboardInterrupt: send_tg("⛔توقف"); break
   except Exception as e: log.error(f"err:{e}"); time.sleep(60)
-
 if __name__=="__main__": main()
