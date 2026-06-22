@@ -11,7 +11,7 @@ def send_tg(msg):
   r=requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
    json={"chat_id":TELEGRAM_CHAT_ID,"text":msg,"parse_mode":"HTML"},timeout=15)
   return r.status_code==200
- except Exception as e: log.error(f"TG: {e}"); return False
+ except Exception as e: log.error(f"TG:{e}"); return False
 
 def fetch(sym):
  try:
@@ -29,7 +29,6 @@ def fetch(sym):
   h0=valid[-1][1]; l0=valid[-1][2]
   v0=valid[-1][4] or 0; v1=valid[-2][4] or 0
   chg=(c0-c1)/c1*100 if c1 else 0
-  # RSI
   rsi=50.0
   if len(valid)>=15:
    g=[]; ls=[]
@@ -38,9 +37,7 @@ def fetch(sym):
     (g if d>0 else ls).append(abs(d))
    ag=sum(g)/14 if g else 0; al=sum(ls)/14 if ls else 0
    rsi=100-100/(1+ag/al) if al>0 else (100 if ag>0 else 50)
-  # ATR
   atr=abs(h0-l0) or c0*0.01
-  # Volume ratio
   vr=v0/v1 if v1>0 else 1
   return {"c":c0,"c1":c1,"c2":c2,"h":h0,"l":l0,"atr":atr,"rsi":rsi,"chg":chg,"vr":vr}
  except Exception as e: log.debug(f"{sym}:{e}"); return None
@@ -48,44 +45,30 @@ def fetch(sym):
 def signal(d):
  c=d["c"]; c1=d["c1"]; c2=d["c2"]
  rsi=d["rsi"]; vr=d["vr"]; chg=d["chg"]; atr=d["atr"]
- # شراء: شمعتان صاعدتان + RSI < 65 + حجم متزايد
- buy = c>c1 and c1>c2 and rsi<65 and vr>1.0 and chg>0.3
- # بيع: شمعتان هابطتان + RSI > 35 + حجم متزايد  
- sell= c<c1 and c1<c2 and rsi>35 and vr>1.0 and chg<-0.3
- if not buy and not sell: return None
+ buy=c>c1 and c1>c2 and rsi<65 and vr>1.0 and chg>0.3
+ if not buy: return None
  sl_dist=atr*1.5
- if buy:
-  return {"act":"شراء📈","c":c,"sl":c-sl_dist,"t1":c+sl_dist,"t2":c+sl_dist*2,"t3":c+sl_dist*3,"rsi":rsi,"chg":chg,"vr":vr}
- else:
-  return {"act":"بيع📉","c":c,"sl":c+sl_dist,"t1":c-sl_dist,"t2":c-sl_dist*2,"t3":c-sl_dist*3,"rsi":rsi,"chg":chg,"vr":vr}
+ return {"c":c,"sl":c-sl_dist,"t1":c+sl_dist,"t2":c+sl_dist*2,"t3":c+sl_dist*3,"rsi":rsi,"chg":chg,"vr":vr}
 
 def main():
  now=datetime.now().strftime("%Y-%m-%d %H:%M")
- log.info("بدء المسح")
  send_tg(f"🔄 <b>SATS بدأ المسح</b> | ⏰{now}")
- ok=0; buys=[]; sells=[]
+ ok=0; buys=[]
  for sym in SYMBOLS:
   d=fetch(sym)
   if not d: continue
   ok+=1
   s=signal(d)
-  if s:
-   if "شراء" in s["act"]: buys.append((sym,s))
-   else: sells.append((sym,s))
- log.info(f"جُلب:{ok} | شراء:{len(buys)} | بيع:{len(sells)}")
- if buys or sells:
+  if s: buys.append((sym,s))
+ log.info(f"جُلب:{ok} | شراء:{len(buys)}")
+ if buys:
   msg=f"🔍 <b>SATS | السوق السعودي</b>\n⏰{now}\n━━━━━━━━━━━━━━━━\n\n"
-  if buys:
-   msg+=f"📈 <b>شراء ({len(buys)})</b>\n\n"
-   for sym,s in sorted(buys,key=lambda x:-x[1]["chg"]):
-    msg+=f"🟢 <b>{sym}</b>\n💰 {s['c']:.2f} ▲{s['chg']:.1f}%\n🛑 SL: {s['sl']:.2f}\n🎯 TP1: {s['t1']:.2f} | TP2: {s['t2']:.2f} | TP3: {s['t3']:.2f}\n📊 RSI: {s['rsi']:.0f} | حجم: {s['vr']:.1f}x\n\n"
-  if sells:
-   msg+=f"📉 <b>بيع ({len(sells)})</b>\n\n"
-   for sym,s in sorted(sells,key=lambda x:x[1]["chg"]):
-    msg+=f"🔴 <b>{sym}</b>\n💰 {s['c']:.2f} ▼{abs(s['chg']):.1f}%\n🛑 SL: {s['sl']:.2f}\n🎯 TP1: {s['t1']:.2f} | TP2: {s['t2']:.2f} | TP3: {s['t3']:.2f}\n📊 RSI: {s['rsi']:.0f} | حجم: {s['vr']:.1f}x\n\n"
+  msg+=f"📈 <b>شراء ({len(buys)})</b>\n\n"
+  for sym,s in sorted(buys,key=lambda x:-x[1]["chg"]):
+   msg+=f"🟢 <b>{sym}</b>\n💰 {s['c']:.2f} ▲{s['chg']:.1f}%\n🛑 SL: {s['sl']:.2f}\n🎯 TP1: {s['t1']:.2f} | TP2: {s['t2']:.2f} | TP3: {s['t3']:.2f}\n📊 RSI: {s['rsi']:.0f} | حجم: {s['vr']:.1f}x\n\n"
   msg+=f"━━━━━━━━━━━━━━━━\n📋 {ok}/{len(SYMBOLS)} سهم | SATS v3"
   send_tg(msg)
  else:
-  send_tg(f"📋 <b>مسح مكتمل</b> | {now}\n💤 لا إشارات\n📊 {ok}/{len(SYMBOLS)} سهم")
+  send_tg(f"📋 <b>مسح مكتمل</b> | {now}\n💤 لا إشارات شراء اليوم\n📊 {ok}/{len(SYMBOLS)} سهم")
 
 main()
