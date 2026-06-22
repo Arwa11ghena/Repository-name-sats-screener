@@ -10,6 +10,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install
-        run: pip install requests
+        run: pip install requests pytz
       - name: Run
         run: python sats_screener.py
