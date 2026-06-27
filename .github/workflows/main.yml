@@ -1,15 +1,30 @@
-name: SATS Screener
+name: SATS Telegram Bot
+
 on:
   schedule:
-    - cron: '*/15 6-12 * * 0-4'
+    - cron: "15 7 * * 0-4"  # 10:15 صباحًا بتوقيت السعودية تقريبًا
   workflow_dispatch:
+
 jobs:
-  scan:
+  run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Install
-        run: pip install requests pytz
-      - name: Run
-        run: python sats_screener.py
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install requests
+
+      - name: Run bot
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: |
+          python bot.py
