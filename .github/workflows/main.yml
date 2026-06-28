@@ -28,3 +28,4 @@ jobs:
           CHAT_ID: ${{ secrets.CHAT_ID }}
         run: |
           python bot.py
+Add SATS Telegram workflow
